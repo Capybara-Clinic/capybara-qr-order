@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head><title>QR Codes</title></head>
+<body>
+  <h1>테이블 QR 코드</h1>
+  {% for i in tables %}
+    <div>
+      <p>Table {{ i }}</p>
+      <img src="{{ url_for('static', filename='qrcodes/table_' ~ i ~ '.png') }}" width="150">
+    </div>
+  {% endfor %}
+</body>
+</html>
