@@ -19,7 +19,7 @@ def get_menu_and_orders(table_id):
                 "menu_id": menu.menu_id,
                 "menu_name": menu.menu_name,
                 "description": menu.description,
-                "price": float(menu.price),
+                "price": int(menu.price),
                 "image_url": menu.image_url,
                 "stock_quantity": menu.stock_quantity,
                 "is_available": menu.is_available
