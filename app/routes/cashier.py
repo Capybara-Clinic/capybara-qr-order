@@ -183,14 +183,95 @@ def cancel_order():
     data = request.get_json()
     order_id = data.get('order_id')
 
+    # 주문 존재 여부 확인
     order = Order.query.get(order_id)
     if not order:
         return jsonify({"error": "해당 주문이 존재하지 않습니다."}), 404
 
+    # 이미 취소된 주문인지 확인
+    if order.order_status == "취소":
+        return jsonify({"message": "이미 취소된 주문입니다."}), 400
+
+    # 주문 상세 항목 불러오기
+    order_details = OrderDetail.query.filter_by(order_id=order_id).all()
+
+    # stock 복구 부분
+    for detail in order_details:
+        menu = Menu.query.get(detail.menu_id)
+        if menu:
+            # 취소된 메뉴의 수량만큼 재고 증가
+            menu.stock_quantity += detail.quantity  
+
+    # 주문 상태 변경
     order.order_status = "취소"
     db.session.commit()
 
     return jsonify({
-        "message": "주문이 취소되었습니다.",
+        "message": "주문이 취소되었고, 재고가 복구되었습니다.",
         "order_id": order_id
+    }), 200
+
+@cashier_bp.route('/ordermanagement', methods=['GET'])
+def get_all_orders():
+    orders = Order.query.order_by(Order.created_at.desc()).all()
+    result = []
+
+    for order in orders:
+        items = order.order_details
+        summary = []
+        for item in items[:2]:
+            summary.append(f"{item.menu.menu_name}({item.quantity}개)")
+        if len(items) > 2:
+            summary.append(f"외 {len(items) - 2}개")
+
+        result.append({
+            "order_id": order.order_id,
+            "table_id": order.table_id,
+            "depositor_name": order.depositor_name,
+            "total_amount": float(order.total_amount),
+            "order_status": order.order_status,
+            "order_time": order.order_time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "menu_summary": " ".join(summary)
+        })
+
+    return jsonify({"orders": result})
+
+@cashier_bp.route('/orders/<int:order_id>/status', methods=['PATCH'])
+def update_order_status(order_id):
+    data = request.get_json()
+    new_status = data.get('order_status')
+
+    if new_status not in ['결제대기', '결제확인', '완료', '취소']:
+        return jsonify({"error": "유효하지 않은 상태입니다."}), 400
+
+    order = Order.query.get(order_id)
+    if not order:
+        return jsonify({"error": "주문이 존재하지 않습니다."}), 404
+
+    order.order_status = new_status
+    db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "order_id": order_id,
+        "order_status": new_status,
+        "message": "주문 상태가 변경되었습니다."
+    })
+
+
+@cashier_bp.route('/tables/reset', methods=['POST'])
+def reset_table():
+    data = request.get_json()
+    table_id = data.get("table_id")
+
+    table = StoreTable.query.get(table_id)
+    if not table:
+        return jsonify({"error": "테이블을 찾을 수 없습니다."}), 404
+
+    table.is_occupied = False
+    db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "message": f"테이블 {table_id}번이 정리되었습니다."
     })
