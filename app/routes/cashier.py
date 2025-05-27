@@ -4,28 +4,59 @@ from app.models import db, StoreTable, Order, OrderDetail, Menu
 cashier_bp = Blueprint('cashier', __name__, url_prefix='/cashier')
 
 
-# ✅ 전체 테이블 상태 조회
+# 전체 테이블 상태 조회
 @cashier_bp.route('/tables', methods=['GET'])
 def get_table_statuses():
     tables = StoreTable.query.order_by(StoreTable.table_id).all()
     result = []
 
     for table in tables:
-        latest_order = (
-            Order.query.filter_by(table_id=table.table_id)
-            .order_by(Order.created_at.desc())
-            .first()
-        )
-        result.append({
-            "table_id": table.table_id,
-            "is_occupied": table.is_occupied,
-            "latest_order_status": latest_order.order_status if latest_order else None
-        })
+        # 마지막 초기화 시점 (비어 있을 경우)
+        last_reset_time = table.updated_at if not table.is_occupied else None
+
+        # 주문 필터링: 마지막 초기화 이후만 포함
+        if last_reset_time:
+            orders = Order.query.filter(
+                Order.table_id == table.table_id,
+                Order.created_at > last_reset_time
+            ).all()
+        else:
+            orders = Order.query.filter_by(table_id=table.table_id).all()
+
+        # 상태별 금액 합계 계산
+        total_amount_by_status = {
+            "결제대기": 0,
+            "결제확인": 0,
+            "완료": 0
+        }
+
+        for order in orders:
+            if order.order_status in total_amount_by_status:
+                total_amount_by_status[order.order_status] += int(order.total_amount)
+
+        total_sum = sum(total_amount_by_status.values())
+
+        # 테이블 상태가 True일 때만 최신 주문 정보 포함
+        if not last_reset_time and orders:
+            latest_order = max(orders, key=lambda o: o.created_at)
+            result.append({
+                "table_id": table.table_id,
+                "is_occupied": table.is_occupied,
+                "latest_order_status": latest_order.order_status,
+                "latest_order_time": latest_order.created_at.strftime("%Y-%m-%d %H:%M"),
+                "total_amount_sum": total_sum
+            })
+        else:
+            result.append({
+                "table_id": table.table_id,
+                "is_occupied": table.is_occupied,
+                "total_amount_sum": total_sum
+            })
 
     return jsonify(result)
 
 
-# ✅ 특정 테이블 주문 내역 조회
+# 특정 테이블 주문 내역 조회
 @cashier_bp.route('/table/<int:table_id>', methods=['GET'])
 def get_table_orders(table_id):
     table = StoreTable.query.get(table_id)
@@ -40,6 +71,7 @@ def get_table_orders(table_id):
         detail_data = [
             {
                 "menu_name": d.menu.menu_name,
+                "menu_account": d.menu.price,
                 "quantity": d.quantity,
                 "is_served": d.is_served
             } for d in details
@@ -48,7 +80,7 @@ def get_table_orders(table_id):
             "order_id": order.order_id,
             "depositor_name": order.depositor_name,
             "order_status": order.order_status,
-            "total_amount": float(order.total_amount),
+            "total_amount": int(order.total_amount),
             "order_time": order.order_time.strftime("%Y-%m-%d %H:%M:%S"),
             "details": detail_data
         })
@@ -59,7 +91,7 @@ def get_table_orders(table_id):
     })
 
 
-# ✅ 결제 확인 처리
+# 결제 확인 처리
 @cashier_bp.route('/confirm_order', methods=['POST'])
 def confirm_order():
     data = request.get_json()
@@ -81,7 +113,7 @@ def confirm_order():
     })
 
 
-# ✅ 수동 주문 등록 (캐셔용)
+# 수동 주문 등록 (캐셔용)
 @cashier_bp.route('/manual_order', methods=['POST'])
 def create_manual_order():
     data = request.get_json()
@@ -114,7 +146,7 @@ def create_manual_order():
             return jsonify({"error": f"{item['menu_id']}번 메뉴가 유효하지 않음"}), 400
 
         quantity = int(item['quantity'])
-        unit_price = float(menu.price)
+        unit_price = int(menu.price)
         subtotal = quantity * unit_price
 
         detail = OrderDetail(
@@ -136,7 +168,7 @@ def create_manual_order():
     }), 201
 
 
-# ✅ 주문 수정 (항목 수량 변경, 메뉴 변경 등)
+# 주문 수정 (항목 수량 변경, 메뉴 변경 등)
 @cashier_bp.route('/order/update', methods=['PUT'])
 def update_order():
     data = request.get_json()
@@ -157,7 +189,7 @@ def update_order():
             return jsonify({"error": f"{item['menu_id']}번 메뉴가 없습니다."}), 400
 
         quantity = int(item['quantity'])
-        unit_price = float(menu.price)
+        unit_price = int(menu.price)
         subtotal = quantity * unit_price
 
         new_detail = OrderDetail(
@@ -228,14 +260,15 @@ def get_all_orders():
             "order_id": order.order_id,
             "table_id": order.table_id,
             "depositor_name": order.depositor_name,
-            "total_amount": float(order.total_amount),
+            "total_amount": int(order.total_amount),
             "order_status": order.order_status,
-            "order_time": order.order_time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "order_time": order.order_time.strftime("%Y-%m-%d %H:%M:%S"),
             "menu_summary": " ".join(summary)
         })
 
     return jsonify({"orders": result})
-
+#테이블 주문에 대한 상태를 수정하는 부분인데 어떻게 작동하는겨?
+#
 @cashier_bp.route('/orders/<int:order_id>/status', methods=['PATCH'])
 def update_order_status(order_id):
     data = request.get_json()

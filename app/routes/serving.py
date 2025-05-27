@@ -63,3 +63,27 @@ def complete_serving_item():
         "order_id": order_id,
         "fully_served": (remaining == 0)
     })
+
+@serving_bp.route('/completeall', methods=['POST'])
+def complete_entire_order():
+    data = request.get_json()
+    order_id = data.get('order_id')
+
+    if not order_id:
+        return jsonify({"error": "order_id 누락"}), 400
+
+    order = Order.query.get(order_id)
+    if not order:
+        return jsonify({"error": "주문이 존재하지 않습니다."}), 404
+
+    for item in order.order_details:
+        item.is_served = True
+
+    order.order_status = '완료'
+    db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "order_id": order_id,
+        "message": "주문 전체가 서빙 완료 처리되었습니다."
+    })

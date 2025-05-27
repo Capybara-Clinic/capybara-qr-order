@@ -38,7 +38,7 @@ def submit_order():
             return jsonify({"error": f"{item['menu_id']}번 메뉴는 주문할 수 없습니다."}), 400
 
         quantity = int(item['quantity'])
-        unit_price = float(menu.price)
+        unit_price = int(menu.price)
         subtotal = quantity * unit_price
 
         detail = OrderDetail(
@@ -71,13 +71,13 @@ def get_payment_info(order_id):
         {
             "menu_name": d.menu.menu_name,
             "quantity": d.quantity,
-            "subtotal": float(d.subtotal)
+            "subtotal": int(d.subtotal)
         } for d in details
     ]
 
     return jsonify({
         "order_id": order_id,
         "depositor_name": order.depositor_name,
-        "total_amount": float(order.total_amount),
+        "total_amount": int(order.total_amount),
         "items": detail_data
     })
