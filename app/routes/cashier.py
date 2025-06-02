@@ -11,33 +11,28 @@ def get_table_statuses():
     result = []
 
     for table in tables:
-        # 마지막 초기화 시점 (비어 있을 경우)
-        last_reset_time = table.updated_at if not table.is_occupied else None
-
-        # 주문 필터링: 마지막 초기화 이후만 포함
-        if last_reset_time:
+        # 1. 비어 있으면 주문은 빈 리스트 (매출 0)
+        if not table.is_occupied:
+            orders = []
+        else:
+            # 2. 점유 중이면 최근 점유(갱신) 시점 이후의 주문만 집계
             orders = Order.query.filter(
                 Order.table_id == table.table_id,
-                Order.created_at > last_reset_time
+                Order.created_at >= table.updated_at
             ).all()
-        else:
-            orders = Order.query.filter_by(table_id=table.table_id).all()
-
-        # 상태별 금액 합계 계산
+        # 3. 상태별 금액 합계 계산
         total_amount_by_status = {
             "결제대기": 0,
             "결제확인": 0,
             "완료": 0
         }
-
         for order in orders:
             if order.order_status in total_amount_by_status:
-                total_amount_by_status[order.order_status] += int(order.total_amount)
-
+                total_amount_by_status[order.order_status] += int(order.total_amount)        
         total_sum = sum(total_amount_by_status.values())
 
-        # 테이블 상태가 True일 때만 최신 주문 정보 포함
-        if not last_reset_time and orders:
+        # 4. 점유 중이고 주문이 있으면 최신 주문 정보도 포함
+        if table.is_occupied and orders:
             latest_order = max(orders, key=lambda o: o.created_at)
             result.append({
                 "table_id": table.table_id,
@@ -47,6 +42,7 @@ def get_table_statuses():
                 "total_amount_sum": total_sum
             })
         else:
+            # (비어있거나 주문 없는 경우)
             result.append({
                 "table_id": table.table_id,
                 "is_occupied": table.is_occupied,
@@ -55,7 +51,6 @@ def get_table_statuses():
 
     return jsonify(result)
 
-
 # 특정 테이블 주문 내역 조회
 @cashier_bp.route('/table/<int:table_id>', methods=['GET'])
 def get_table_orders(table_id):
@@ -63,8 +58,10 @@ def get_table_orders(table_id):
     if not table:
         return abort(404, description="해당 테이블이 존재하지 않습니다.")
 
-    orders = Order.query.filter_by(table_id=table_id).order_by(Order.created_at.desc()).all()
-
+    orders = Order.query.filter(
+        Order.table_id == table.table_id,
+        Order.created_at >= table.updated_at
+    ).order_by(Order.created_at.desc()).all()
     result = []
     for order in orders:
         details = OrderDetail.query.filter_by(order_id=order.order_id).all()
@@ -255,7 +252,6 @@ def get_all_orders():
             summary.append(f"{item.menu.menu_name}({item.quantity}개)")
         if len(items) > 2:
             summary.append(f"외 {len(items) - 2}개")
-
         result.append({
             "order_id": order.order_id,
             "table_id": order.table_id,
