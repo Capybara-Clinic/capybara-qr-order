@@ -20,5 +20,12 @@ def create_app():
     app.register_blueprint(cashier_bp)
     app.register_blueprint(kitchen_bp)   # ✅ 누락되었던 부분 추가
     app.register_blueprint(serving_bp)
+    
+    # 등록된 라우트 출력
+    print("\n=== 등록된 라우트 목록 ===")
+    for rule in app.url_map.iter_rules():
+        methods = ','.join(rule.methods - {'HEAD', 'OPTIONS'})
+        print(f"{methods:10} {rule.rule:30} -> {rule.endpoint}")
+    print("========================\n")
 
     return app
